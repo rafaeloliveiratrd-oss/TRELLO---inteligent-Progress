@@ -1,0 +1,11 @@
+{
+  "name": "trello-progresso-inteligente",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "python3 -m http.server 3000 --bind 0.0.0.0"
+  },
+  "engines": { "node": ">=20" }
+}

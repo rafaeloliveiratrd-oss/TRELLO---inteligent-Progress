@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Configurar progresso</title>
+  <link rel="stylesheet" href="./css/settings.css">
+  <script src="https://p.trellocdn.com/power-up.min.js" defer></script>
+  <script type="module" src="./js/settings.js"></script>
+</head>
+<body>
+  <main id="settings">
+    <h1>Configurar progresso</h1>
+    <p>Marque as checklists que devem contar no progresso deste cartão.</p>
+    <form id="progress-form">
+      <fieldset id="checklists" aria-label="Checklists incluídas no progresso" disabled>
+        <legend class="sr-only">Checklists incluídas no progresso</legend>
+        <p id="loading" role="status">Carregando checklists…</p>
+      </fieldset>
+      <div class="summary" aria-live="polite">
+        <span>Progresso considerado</span>
+        <strong id="percentage">—</strong>
+        <span id="counts">Aguardando dados do cartão</span>
+      </div>
+      <p id="message" role="status" aria-live="polite"></p>
+      <div class="actions">
+        <button id="reload" type="button">Recarregar</button>
+        <button id="save" type="submit" disabled>Salvar configuração</button>
+      </div>
+    </form>
+  </main>
+</body>
+</html>
