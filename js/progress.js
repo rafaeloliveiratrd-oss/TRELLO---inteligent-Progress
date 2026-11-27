@@ -1,30 +1,53 @@
-/** Validate persisted settings before using or replacing them. */
+/** A malformed SDK response must never be presented as an empty card. */
+export class ProgressDataError extends TypeError {
+  constructor(message, code = 'unexpected') {
+    super(message);
+    this.name = 'ProgressDataError';
+    this.code = code;
+  }
+}
+
 export function normalizeIgnoredIds(value = []) {
   if (!Array.isArray(value) || value.some(id => typeof id !== 'string' || !id)) {
-    throw new TypeError('Configuração de progresso inválida.');
+    throw new ProgressDataError('Configuração de itens ignorados inválida.');
   }
   return [...new Set(value)];
 }
 
-/** Calculate from checklist records with { id, checkItems: [{ state }] }. */
+/** Count items across all checklists, without modifying their original records. */
 export function calculateProgress(checklists, ignoredIds = []) {
   if (!Array.isArray(checklists)) {
-    throw new TypeError('Não foi possível ler as checklists.');
+    throw new ProgressDataError('O Trello não forneceu as checklists completas.',
+      checklists == null ? 'incomplete' : 'unexpected');
   }
   const ignored = new Set(normalizeIgnoredIds(ignoredIds));
-  let total = 0;
+  const checklistIds = new Set();
+  const itemIds = new Set();
   let completed = 0;
+  let total = 0;
+  let ignoredCount = 0;
+  let allCompleted = 0;
   for (const checklist of checklists) {
-    if (!checklist || typeof checklist.id !== 'string' || !checklist.id) {
-      throw new TypeError('Checklist sem identificação válida.');
+    if (!checklist || typeof checklist.id !== 'string' || !checklist.id || checklistIds.has(checklist.id)) {
+      throw new ProgressDataError('Checklist sem identificação única válida.');
     }
-    if (ignored.has(checklist.id)) continue;
+    checklistIds.add(checklist.id);
     if (!Array.isArray(checklist.checkItems)) {
-      throw new TypeError('Não foi possível ler os itens da checklist.');
+      throw new ProgressDataError('O Trello não forneceu todos os itens das checklists.',
+        checklist.checkItems == null ? 'incomplete' : 'unexpected');
     }
     for (const item of checklist.checkItems) {
-      if (!item || !['complete', 'incomplete'].includes(item.state)) {
-        throw new TypeError('Item de checklist com estado inválido.');
+      if (!item || typeof item.id !== 'string' || !item.id || itemIds.has(item.id)) {
+        throw new ProgressDataError('Item sem identificação única válida.');
+      }
+      itemIds.add(item.id);
+      if (!['complete', 'incomplete'].includes(item.state)) {
+        throw new ProgressDataError('Item de checklist com estado inesperado.');
+      }
+      if (item.state === 'complete') allCompleted += 1;
+      if (ignored.has(item.id)) {
+        ignoredCount += 1;
+        continue;
       }
       total += 1;
       if (item.state === 'complete') completed += 1;
@@ -33,6 +56,18 @@ export function calculateProgress(checklists, ignoredIds = []) {
   return {
     completed,
     total,
+    ignored: ignoredCount,
+    totalItems: itemIds.size,
+    allCompleted,
     percentage: total === 0 ? null : Math.round(completed / total * 100),
+    status: itemIds.size === 0 ? 'empty' : total === 0 ? 'all-ignored' : 'active',
   };
+}
+
+export function progressErrorMessage(error) {
+  if (error instanceof ProgressDataError) {
+    if (error.code === 'incomplete') return 'Dados incompletos do Trello. Tente recarregar.';
+    return 'Dados inesperados do Trello ou da configuração. Tente recarregar.';
+  }
+  return 'Não foi possível ler os dados do cartão. Verifique sua conexão e tente recarregar.';
 }

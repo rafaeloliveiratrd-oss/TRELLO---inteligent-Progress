@@ -3,31 +3,47 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Configurar progresso</title>
+  <title>Progresso Inteligente</title>
   <link rel="stylesheet" href="./css/settings.css">
   <script src="https://p.trellocdn.com/power-up.min.js" defer></script>
   <script type="module" src="./js/settings.js"></script>
 </head>
 <body>
   <main id="settings">
-    <h1>Configurar progresso</h1>
-    <p>Marque as checklists que devem contar no progresso deste cartão.</p>
+    <header class="header">
+      <div class="heading"><img src="./images/progress.svg" alt="" width="32" height="32"><h1>Progresso Inteligente</h1></div>
+      <p id="card-name">Carregando cartão…</p>
+      <p class="instruction">Escolha quais itens contam no progresso. A conclusão é consultada no Trello.</p>
+    </header>
+    <section class="summary" aria-label="Resumo do progresso">
+      <div class="progress-heading"><strong id="percentage">—</strong><span id="counts">Carregando itens…</span></div>
+      <progress id="progress-bar" max="100" value="0" aria-label="Progresso dos itens considerados"></progress>
+      <dl class="stats">
+        <div><dt>Considerados</dt><dd id="considered-count">—</dd></div>
+        <div><dt>Concluídos</dt><dd id="completed-count">—</dd></div>
+        <div><dt>Ignorados</dt><dd id="ignored-count">—</dd></div>
+      </dl>
+    </section>
+    <p id="migration" class="notice" hidden>A seleção por checklist da versão anterior foi desativada. Todos os itens entram por padrão. Escolha individualmente os itens que deseja ignorar e salve.</p>
     <form id="progress-form">
-      <fieldset id="checklists" aria-label="Checklists incluídas no progresso" disabled>
-        <legend class="sr-only">Checklists incluídas no progresso</legend>
-        <p id="loading" role="status">Carregando checklists…</p>
+      <div class="toolbar"><div class="filters" role="group" aria-label="Filtrar itens">
+        <button type="button" data-filter="all" aria-pressed="true">Todos</button>
+        <button type="button" data-filter="included" aria-pressed="false">Considerados</button>
+        <button type="button" data-filter="ignored" aria-pressed="false">Ignorados</button>
+      </div><button id="reload" type="button">Recarregar</button></div>
+      <fieldset id="editor" disabled aria-label="Selecionar itens considerados">
+        <div id="checklists" aria-busy="true"><p class="empty">Carregando checklists…</p></div>
       </fieldset>
-      <div class="summary" aria-live="polite">
-        <span>Progresso considerado</span>
-        <strong id="percentage">—</strong>
-        <span id="counts">Aguardando dados do cartão</span>
-      </div>
-      <p id="message" role="status" aria-live="polite"></p>
-      <div class="actions">
-        <button id="reload" type="button">Recarregar</button>
-        <button id="save" type="submit" disabled>Salvar configuração</button>
-      </div>
+      <footer class="footer">
+        <p id="message" role="status" aria-live="polite"></p>
+        <div class="actions"><button id="close" type="button">Fechar</button><button id="save" type="submit" disabled>Salvar configuração</button></div>
+      </footer>
     </form>
+    <dialog id="discard-dialog" aria-labelledby="discard-title">
+      <h2 id="discard-title">Descartar alterações?</h2>
+      <p>Você tem alterações que ainda não foram salvas.</p>
+      <div class="actions"><button id="keep-editing" type="button" autofocus>Continuar editando</button><button id="discard" type="button">Descartar alterações</button></div>
+    </dialog>
   </main>
 </body>
 </html>
