@@ -1,18 +1,33 @@
 import { renderChecklists, renderSummary } from './settings-view.js';
-import { readCardProgress, saveIgnoredChecklists, sameIds } from './trello-data.js';
+import { readCardProgress, saveIgnoredItems, sameIds, CONFLICT_MESSAGE } from './trello-data.js';
+import { progressErrorMessage, ProgressDataError } from './progress.js';
 
 const form = document.querySelector('#progress-form');
 const checklistsElement = document.querySelector('#checklists');
+const editor = document.querySelector('#editor');
 const saveButton = document.querySelector('#save');
 const reloadButton = document.querySelector('#reload');
+const closeButton = document.querySelector('#close');
 const message = document.querySelector('#message');
+const discardDialog = document.querySelector('#discard-dialog');
 let snapshot;
-let baseline = [];
+let baseline;
 let ignored = new Set();
-let dirty = false;
+let filter = 'all';
 let saving = false;
+let loading = false;
+let conflicted = false;
 let requestId = 0;
+let discardAction;
 let t;
+
+function isDirty() {
+  return Boolean(baseline && !sameIds([...ignored], baseline.ignoredIds));
+}
+
+function hasConflict() {
+  return Boolean(snapshot && baseline && !sameIds(snapshot.ignoredIds, baseline.ignoredIds));
+}
 
 function showMessage(text, isError = false) {
   message.textContent = text;
@@ -20,95 +35,163 @@ function showMessage(text, isError = false) {
 }
 
 function updateView() {
-  renderChecklists(checklistsElement, snapshot.checklists, [...ignored]);
+  const focusedId = document.activeElement?.dataset.itemId;
+  renderChecklists(checklistsElement, snapshot.checklists, [...ignored], filter);
   renderSummary(snapshot.checklists, [...ignored]);
-  checklistsElement.disabled = false;
-  saveButton.disabled = false;
+  document.querySelector('#card-name').textContent = snapshot.cardName;
+  document.querySelector('#migration').hidden = !snapshot.legacyPreferences;
+  editor.disabled = saving || loading;
+  saveButton.disabled = saving || loading || conflicted || hasConflict();
+  if (focusedId) {
+    const button = [...checklistsElement.querySelectorAll('[data-item-id]')]
+      .find(element => element.dataset.itemId === focusedId);
+    (button || document.querySelector(`[data-filter="${filter}"]`)).focus({ preventScroll: true });
+  }
 }
 
-async function load() {
+async function load(discardDraft = false) {
   if (saving) return;
   const currentRequest = ++requestId;
+  loading = true;
+  editor.disabled = true;
   saveButton.disabled = true;
+  checklistsElement.setAttribute('aria-busy', 'true');
+  showMessage('Carregando…');
   try {
     const next = await readCardProgress(t);
     if (currentRequest !== requestId) return;
-    if (!dirty) {
-      baseline = next.ignoredIds;
-      ignored = new Set(baseline);
+    if (baseline && next.cardId !== baseline.cardId && isDirty()) {
+      throw new Error('O cartão em contexto mudou. Reabra a configuração.');
+    }
+    if (discardDraft || !isDirty()) {
+      baseline = next;
+      ignored = new Set(next.ignoredIds);
     }
     snapshot = next;
+    conflicted = hasConflict();
+    loading = false;
     updateView();
-    if (!sameIds(next.ignoredIds, baseline)) {
-      showMessage('A configuração foi alterada por outro membro. Recarregue antes de salvar.', true);
-      saveButton.disabled = true;
-    } else {
-      showMessage('');
-    }
-  } catch {
+    showMessage(hasConflict() ? CONFLICT_MESSAGE : '', hasConflict());
+  } catch (error) {
     if (currentRequest !== requestId) return;
-    checklistsElement.disabled = true;
-    saveButton.disabled = true;
-    document.querySelector('#loading')?.remove();
+    checklistsElement.textContent = 'Os itens não puderam ser carregados.';
     document.querySelector('#percentage').textContent = '—';
     document.querySelector('#counts').textContent = 'Progresso indisponível';
-    showMessage('Não foi possível ler as checklists ou a configuração. Tente recarregar.', true);
-  }
-  try {
-    await t.sizeTo('#settings');
-  } catch {
-    // Resizing is cosmetic. The popup can still be used and scrolled.
+    document.querySelector('#progress-bar').hidden = true;
+    for (const id of ['considered-count', 'completed-count', 'ignored-count']) {
+      document.getElementById(id).textContent = '—';
+    }
+    showMessage(progressErrorMessage(error), true);
+  } finally {
+    if (currentRequest === requestId) {
+      loading = false;
+      checklistsElement.setAttribute('aria-busy', 'false');
+    }
   }
 }
 
-checklistsElement.addEventListener('change', event => {
-  const input = event.target;
-  if (input.type !== 'checkbox') return;
-  if (input.checked) ignored.delete(input.value);
-  else ignored.add(input.value);
-  dirty = true;
-  renderSummary(snapshot.checklists, [...ignored]);
+async function runAction(action) {
+  try {
+    await action();
+  } catch {
+    showMessage('Não foi possível fechar a janela. Tente novamente.', true);
+  }
+}
+
+function requestDiscard(action) {
+  if (saving) return;
+  if (!isDirty()) {
+    void runAction(action);
+    return;
+  }
+  discardAction = action;
+  discardDialog.showModal();
+}
+
+document.querySelector('#keep-editing').addEventListener('click', () => {
+  discardAction = undefined;
+  discardDialog.close();
+});
+discardDialog.addEventListener('cancel', () => { discardAction = undefined; });
+document.querySelector('#discard').addEventListener('click', () => {
+  const action = discardAction;
+  discardAction = undefined;
+  discardDialog.close();
+  if (action) void runAction(action);
 });
 
-reloadButton.addEventListener('click', () => {
-  dirty = false;
-  void load();
+checklistsElement.addEventListener('click', event => {
+  const button = event.target.closest('button[data-item-id]');
+  if (!button || editor.disabled) return;
+  const id = button.dataset.itemId;
+  if (ignored.has(id)) ignored.delete(id);
+  else ignored.add(id);
+  updateView();
+  showMessage(hasConflict() ? CONFLICT_MESSAGE : isDirty() ? 'Alterações ainda não salvas.' : '', hasConflict());
+});
+
+for (const button of document.querySelectorAll('[data-filter]')) {
+  button.addEventListener('click', () => {
+    filter = button.dataset.filter;
+    for (const option of document.querySelectorAll('[data-filter]')) {
+      option.setAttribute('aria-pressed', String(option === button));
+    }
+    if (snapshot && !editor.disabled) updateView();
+  });
+}
+
+reloadButton.addEventListener('click', () => requestDiscard(() => load(true)));
+closeButton.addEventListener('click', () => requestDiscard(() => t.closeModal()));
+window.addEventListener('beforeunload', event => {
+  if (isDirty()) {
+    event.preventDefault();
+    event.returnValue = '';
+  }
 });
 
 form.addEventListener('submit', async event => {
   event.preventDefault();
-  if (saving || saveButton.disabled || !snapshot) return;
+  if (saving || loading || saveButton.disabled || !snapshot) return;
   saving = true;
   ++requestId;
-  checklistsElement.disabled = true;
+  editor.disabled = true;
   saveButton.disabled = true;
   reloadButton.disabled = true;
+  closeButton.disabled = true;
   showMessage('Salvando…');
   try {
-    snapshot = await saveIgnoredChecklists(t, [...ignored], baseline);
-    baseline = snapshot.ignoredIds;
-    ignored = new Set(baseline);
-    dirty = false;
-    updateView();
+    snapshot = await saveIgnoredItems(t, [...ignored], baseline);
+    baseline = snapshot;
+    conflicted = false;
+    ignored = new Set(snapshot.ignoredIds);
     showMessage('Configuração salva.');
   } catch (error) {
-    checklistsElement.disabled = false;
-    saveButton.disabled = false;
-    const conflict = error.message?.startsWith('A configuração foi alterada');
-    showMessage(conflict ? error.message
-      : 'Não foi possível salvar. Verifique sua conexão e sua permissão para editar o cartão. Tente novamente.', true);
-    if (conflict) saveButton.disabled = true;
+    if (error.message === CONFLICT_MESSAGE) {
+      // Force a new read before the user can retry an obsolete draft.
+      conflicted = true;
+      showMessage(CONFLICT_MESSAGE, true);
+    } else if (error instanceof ProgressDataError) {
+      showMessage(progressErrorMessage(error), true);
+    } else if (error.message?.includes('4096')) {
+      showMessage('A configuração excede o limite de 4096 caracteres do Trello. Considere mais itens antes de salvar.', true);
+    } else {
+      showMessage('Não foi possível salvar. Verifique sua conexão e permissão para editar o cartão. Tente novamente.', true);
+    }
   } finally {
     saving = false;
     reloadButton.disabled = false;
+    closeButton.disabled = false;
+    updateView();
   }
 });
 
 if (window.TrelloPowerUp) {
   t = window.TrelloPowerUp.iframe();
-  t.render(load);
+  t.render(() => load());
 } else {
-  document.querySelector('#loading')?.remove();
+  checklistsElement.textContent = 'O SDK do Trello não foi carregado.';
+  checklistsElement.setAttribute('aria-busy', 'false');
   reloadButton.disabled = true;
-  showMessage('Não foi possível carregar o SDK do Trello. Reabra a configuração pelo cartão.', true);
+  closeButton.disabled = true;
+  showMessage('Reabra a configuração pelo cartão do Trello.', true);
 }

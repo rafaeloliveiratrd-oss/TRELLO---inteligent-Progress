@@ -1,189 +1,253 @@
-# Trello Progresso Inteligente — MVP 1.0
+# Trello — Progresso Inteligente · MVP 1.1
 
-Power-Up personalizado para escolher quais checklists contam no progresso de um
-cartão. Os arquivos HTML, CSS e JavaScript podem ser hospedados gratuitamente no
-GitHub Pages em um repositório público.
+Power-Up personalizado para escolher, individualmente, quais itens das checklists
+contam no progresso de um cartão. Interface em português brasileiro, modal oficial
+do Trello e hospedagem estática no GitHub Pages.
 
-## Como funciona
+## Uso
 
 1. Abra um cartão e clique em **Configurar progresso**.
-2. Deixe marcadas as checklists que devem contar no cálculo. Todas entram por
-   padrão, inclusive checklists criadas depois da configuração inicial.
-3. Clique em **Salvar configuração**. A seleção é compartilhada com quem pode
-   acessar o cartão. O popup permanece aberto e confirma a gravação.
-4. O badge na frente do cartão apresenta a porcentagem, como `60%`.
+2. Na modal **Progresso Inteligente**, confira o nome do cartão e o resumo.
+3. Clique em **Considerar** para ignorar um item. O controle passa a **Ignorado**
+   e a linha fica cinza. Clique novamente para voltar a considerar esse item.
+4. Use **Todos**, **Considerados** e **Ignorados** para filtrar a visualização.
+5. Confira a porcentagem, barra, itens considerados, concluídos e ignorados.
+   A prévia muda imediatamente, antes da gravação.
+6. Clique em **Salvar configuração** e aguarde a confirmação.
 
-O cálculo soma os itens concluídos de todas as checklists incluídas, divide pelo
-total de itens dessas checklists e multiplica por 100. A apresentação usa o
-inteiro mais próximo. Por exemplo, três itens concluídos em cinco considerados
-resultam em `60%`. Checklists com quantidades diferentes de itens têm seu peso
-proporcional ao número de itens.
+Os controles de seleção são independentes do estado de conclusão. O estado
+**Concluído no Trello** ou **Pendente no Trello** é apresentado ao lado do nome.
+A ordem segue as posições `pos` fornecidas pelo Trello. Quando as posições não
+estão disponíveis para um conjunto, a ordem recebida daquele conjunto é mantida.
+Nomes são inseridos com `textContent`, inclusive quando contêm HTML.
 
-Quando o total considerado é zero, o badge mostra **Sem itens** e o popup mostra
-**— / Nenhum item considerado**. Quando existem itens e nenhum foi concluído,
-o resultado é `0%`. Falhas de leitura apresentam **Progresso indisponível**.
+**Fechar** e **Recarregar** pedem confirmação quando há alterações não salvas.
+O botão **Continuar editando** e Escape na confirmação preservam o rascunho.
 
-O Power-Up consulta `t.card('checklists')`, lê os itens em `checkItems` e considera
-concluído apenas o estado `complete`. O estado `incomplete` representa um item
-pendente. Dados ausentes ou estados desconhecidos geram erro de leitura.
+## Cálculo e atualização
 
-Os IDs ignorados são armazenados na chave `ignoredChecklistIds` com
-`t.set('card', 'shared', 'ignoredChecklistIds', ids)` e recuperados com
-`t.get('card', 'shared', 'ignoredChecklistIds', [])`. IDs de checklists removidas
-são descartados na próxima gravação. Nomes e itens das checklists são preservados.
+```text
+Itens considerados concluídos / Total de itens considerados × 100
+```
 
-Os badges são recalculados em cada chamada de `card-badges` pelo Trello. O popup
-atualiza os dados por `t.render`, preservando seleções ainda não salvas. A atualização
-segue o ciclo nativo do Trello, sem temporizador ou promessa de latência fixa.
+Todos os itens entram por padrão, inclusive itens novos. Itens ignorados são
+excluídos do numerador e do denominador, mesmo quando concluídos. Os itens de
+checklists diferentes são somados. O resultado é arredondado para o inteiro mais
+próximo. Dois concluídos em três considerados resultam em **67%**.
+
+Os filtros afetam apenas a visualização. Renomear um item mantém sua preferência,
+pois ela é identificada por ID. O Power-Up não altera as checklists, seus itens,
+nomes, posições, conclusão ou aparência na interface nativa do Trello.
+
+A modal usa `t.render` para reler os dados e preservar rascunhos. O badge usa
+`card-badges`, relendo os dados em cada chamada feita pelo Trello. A atualização
+segue o ciclo oficial, sem temporizador ou promessa de latência fixa.
+
+### Estados distintos
+
+| Situação | Badge | Modal |
+| --- | --- | --- |
+| Há itens considerados | Por exemplo `67%` | Porcentagem, barra e contadores |
+| Nenhum item considerado foi concluído | `0%` | 0% |
+| Todos os considerados foram concluídos | `100%` | 100% |
+| Cartão ou checklists realmente sem itens | `Sem itens` | `Sem itens no cartão` |
+| Todos os itens existentes estão ignorados | `Sem itens considerados` | Mesmo texto e travessão |
+| Resposta sem checklists/itens completos ou inconsistente com contadores | `Dados incompletos` | Erro e gravação desabilitada |
+| IDs, estados ou configuração inválidos | `Dados inesperados` | Erro e gravação desabilitada |
+| Falha de leitura/conexão/permissão | `Progresso indisponível` | Erro e opção de recarregar |
+
+Em estados neutros ou de erro, a modal oculta a barra e usa um travessão na
+porcentagem. A ausência de `checkItems` não é convertida em uma lista vazia.
+
+## Armazenamento e migração do MVP 1.0
+
+A chave atual é `ignoredCheckItemIds`, no escopo `card` e visibilidade `shared`.
+A leitura usa `t.get('card', 'shared', 'ignoredCheckItemIds', [])`.
+Somente os IDs dos itens ignorados são armazenados. Preferências são independentes
+por cartão e compartilhadas entre seus usuários autorizados.
+
+A chave antiga `ignoredChecklistIds` é lida somente para identificar configurações
+anteriores e apresentar o aviso de migração. Suas exclusões não são transferidas
+aos itens. Sem uma preferência individual já salva, todos os itens entram no cálculo.
+Abrir a modal e consultar badges não provoca gravações.
+
+Na primeira gravação explícita com configuração antiga ativa, uma única chamada
+`t.set('card', 'shared', settings)` envia a nova chave e esvazia a lista antiga.
+A retirada da preferência anterior somente é confirmada depois do sucesso dessa
+operação. As outras chaves do Power-Up são preservadas pelo SDK. IDs de itens
+excluídos são removidos da lista na próxima gravação.
+
+Antes de gravar, o código relê os dados, verifica o cartão em contexto e compara
+as preferências com a base da edição. Alterações compartilhadas observadas
+bloqueiam a gravação e pedem para recarregar. Falhas preservam a seleção local
+para nova tentativa.
+
+## Diagnóstico do cartão `dadas`
+
+O caso informado no quadro TESTE é coberto por testes com dados simulados.
+Uma checklist com três de cinco concluídos e outra com um de dois resulta em
+**4/7 = 57%**. Preferências antigas que ignoram as duas checklists não são
+aplicadas aos itens na versão 1.1.
+
+O leitor consulta `t.card('id', 'name', 'checklists', 'badges')` separadamente
+no contexto de cada chamada. Valida todos os IDs e estados de `checkItems`,
+inclusive os ignorados. Quando disponíveis, compara os totais recebidos com os
+contadores oficiais `badges.checkItems` e `badges.checkItemsChecked`.
+Um contador nativo positivo com arrays de itens vazios, ou outra divergência,
+produz **Dados incompletos**. Os contadores não são usados para inferir estados
+de itens individuais ausentes.
+
+**Diagnóstico real pendente.** Em 27/11/2026, a leitura do quadro
+`https://trello.com/b/2bgDZGFz/teste` foi bloqueada pelo proxy do ambiente com
+HTTP 403 durante o CONNECT, antes de chegar ao Trello. Não houve inspeção
+autenticada do cartão em produção. As diferenças entre modal e badge foram
+exercitadas independentemente em testes simulados, sem presumir igualdade.
+A causa exata do comportamento observado no Trello real ainda precisa de confirmação.
+
+Para verificar o retorno real, use as ferramentas de desenvolvedor do navegador,
+no contexto do iframe da modal, e avalie `window.TrelloPowerUp.iframe().card('id',
+'name', 'checklists', 'badges')`. Para o badge, use um breakpoint dentro de
+`card-badges` em `js/capabilities.js` e inspecione a resposta de `t.card` no contexto
+`t` dessa chamada. Confira arrays, IDs, estados e contadores sem divulgar dados
+privados. A documentação recomenda `t.card()` no contexto individual para obter
+`checkItems`, pois a garantia não existe para a consulta coletiva `t.cards()`.
+
+Se o SDK real omitir itens somente no badge, a seleção individual exige uma
+fonte oficial que forneça seus estados nesse contexto. A API REST de leitura
+é uma alternativa oficial a investigar com as permissões necessárias. O MVP
+mantém a leitura nativa e informa a inconsistência enquanto ela existir.
 
 ## Arquivos
 
 ```text
-index.html                 Conector registrado no Trello
-settings.html              Popup de configuração
-css/settings.css           Estilos responsivos em português brasileiro
-images/progress.svg        Ícone monocromático do botão
-js/connector.js            Inicialização do SDK oficial
-js/capabilities.js         card-buttons e card-badges
-js/trello-data.js           Leitura e armazenamento compartilhado
-js/progress.js             Cálculo puro e validação
-js/settings.js             Controlador do popup e tratamento de erros
-js/settings-view.js        Renderização segura com APIs DOM
-tests/progress.test.js     Testes do cálculo e casos extremos
-tests/trello.test.js       Testes das capacidades e do contrato com o SDK
-package.json               Comandos de desenvolvimento
+index.html                  Conector
+settings.html               Conteúdo da modal
+css/settings.css            Interface responsiva
+images/progress.svg         Ícone do botão
+js/connector.js             Inicialização do SDK
+js/capabilities.js          Botão e badge
+js/progress.js              Cálculo, validação e estados
+js/trello-data.js            Leitura, migração e gravação
+js/settings.js              Estado da modal e interações
+js/settings-view.js         Lista, filtros e resumo
+tests/progress.test.js      Testes do cálculo
+tests/trello.test.js        Testes do adaptador e capacidades
+scripts/browser-smoke.mjs    Testes de interface no Chromium
+package.json                Comandos e dependência de desenvolvimento
+package-lock.json           Instalação reproduzível dos testes de interface
 ```
 
-## Desenvolvimento e testes locais
+## Desenvolvimento e testes
 
-Use Node.js 20 ou superior. O servidor estático usa Python 3. O projeto não tem
-dependências npm nem etapa de compilação.
+Node.js 20 ou superior. Python 3 é usado pelo servidor de desenvolvimento.
+A dependência `playwright-core` é usada somente nos testes de navegador. A
+publicação no Pages serve HTML, CSS, JS e o ícone, sem build nem backend.
+
+Execute os comandos abaixo em um terminal no diretório do projeto.
 
 ```sh
+npm ci
 npm test
+npm run test:browser
 npm start
 ```
 
-`npm start` serve a raiz do projeto na porta 3000. O conector e o popup utilizam
-o SDK oficial carregado de `https://p.trellocdn.com/power-up.min.js`. A página
-do popup precisa do contexto fornecido pelo Trello para ler e gravar os dados.
-Um servidor local isolado permite verificar os arquivos estáticos. Para testar
-o Power-Up instalado, utilize a hospedagem HTTPS e um quadro de testes autorizado.
+O teste de navegador usa o Chromium existente em `/usr/bin/chromium`. Em outro
+sistema, indique o executável pela variável `CHROMIUM_EXECUTABLE_PATH`.
+O script intercepta os arquivos locais e simula o SDK. Os testes não acessam o
+quadro TESTE e não modificam dados do Trello. Capturas de inspeção visual são
+geradas na pasta temporária do sistema, fora do repositório.
 
-### Verificação executada em 25/11/2026
+`npm start` serve a raiz do projeto na porta 3000. O SDK precisa ser executado
+no contexto do Trello para acessar um cartão real.
 
-- **16 testes automatizados passaram** com `npm test`. Cobrem cálculo ponderado,
-  exclusões, checklists novas e removidas, IDs repetidos, ausência de itens,
-  0%, 100%, arredondamento, entradas inválidas e preservação dos dados recebidos.
-  Também verificam todas as combinações de concluídos e totais de 1 a 100 itens.
-- Os testes do adaptador usam um SDK simulado e conferem os argumentos de
-  `t.card`, `t.get`, `t.set`, a espera pela gravação, falhas de leitura e escrita,
-  alterações compartilhadas, atualização dos badges e abertura do popup.
-- Um teste local em Chromium, usando Playwright temporariamente fora do projeto
-  e SDK simulado, passou. Exercitou seleção, prévia de `60%`, leitura de seleção
-  salva simulada, `t.render`, preservação de rascunho, checklist nova, estado
-  neutro, falha de gravação e nova tentativa, falha de leitura e recuperação,
-  conflito entre membros, nomes com HTML e largura de 320 px. O conector foi
-  inicializado e suas duas capacidades foram exercitadas. Não houve erros JS.
-- A documentação oficial e o SDK responderam HTTP 200 após a liberação dos
-  domínios na rede do ambiente. A sintaxe de todos os módulos foi verificada.
+### Resultados em 27/11/2026
 
-O SDK simulado valida o contrato utilizado pelo código. O retorno real de um
-cartão, os eventos de atualização, permissões e a propagação entre membros
-permanecem sujeitos à validação manual abaixo.
+- **30 testes unitários e do adaptador passaram**. Incluem seleção individual,
+  preservação dos dados, reabertura, várias checklists, ignorar concluídos e
+  pendentes, itens novos, renomeados e excluídos, 0%, 100%, estados neutros,
+  migração, erros, limite de armazenamento, conflitos, isolamento entre cartões
+  e badge. Também verificam todas as combinações de concluídos e totais até 100.
+- **9 testes no Chromium passaram**, com SDK simulado. Cobrem a modal e o
+  conector, filtros, prévia, aparência dos ignorados, persistência simulada,
+  teclado, confirmação de descarte, atualização de rascunho, respostas fora de
+  ordem, falhas, conflitos, nomes com HTML e responsividade em 320, 480 e 1024 px.
+- A validação em um cartão real e a propagação dos eventos do Trello seguem
+  pendentes. Esses testes simulados não estabelecem o resultado real no quadro.
 
-## Publicar no GitHub Pages
+## Revisão e atualização no GitHub Pages
 
-1. Revise e envie os arquivos deste projeto para a branch `main` do repositório
-   `rafaeloliveiratrd-oss/TRELLO---inteligent-Progress`.
-2. No GitHub, acesse **Settings → Pages**.
-3. Em **Build and deployment**, selecione **Deploy from a branch**.
-4. Escolha `main`, a pasta `/ (root)` e salve.
-5. Aguarde a publicação e confirme a URL HTTPS informada pelo GitHub Pages.
-6. Verifique que `index.html`, `settings.html`, `css/settings.css`,
-   `js/connector.js` e `images/progress.svg` respondem com sucesso.
+1. Abra o Pull Request da versão 1.1 e revise **Files changed**.
+2. Após revisar os resultados e aceitar as limitações, faça o merge na `main`.
+3. Em **Settings → Pages**, mantenha **Deploy from a branch**, `main`, `/ (root)`.
+4. Acompanhe a publicação na aba **Actions** e confirme a URL informada em Pages.
+5. Recarregue o quadro e reabra a modal para carregar os novos arquivos.
+6. Mantenha somente `card-buttons` e `card-badges` habilitados no cadastro do
+   Power-Up. A modal é uma função de UI dessas capacidades.
 
-A URL esperada do conector é
+O conector permanece no endereço esperado
 `https://rafaeloliveiratrd-oss.github.io/TRELLO---inteligent-Progress/index.html`.
-Confirme a URL efetiva no painel do GitHub. Todos os recursos locais usam caminhos
-relativos para funcionar no subdiretório do repositório.
+O conteúdo da modal continua em `settings.html`, preservando a estrutura anterior.
 
-## Registrar no Trello para uso personalizado
+Para um primeiro cadastro, acesse `https://trello.com/power-ups/admin`, crie o
+Power-Up personalizado no Workspace autorizado, informe a URL HTTPS do conector
+e habilite as duas capacidades. GitHub Pages em repositório público permite
+hospedagem gratuita. Não há serviço externo pago, banco de dados ou backend.
 
-1. Acesse `https://trello.com/power-ups/admin` com uma conta autorizada a
-   administrar Power-Ups no Workspace escolhido.
-2. Crie um Power-Up com o nome **Progresso Inteligente** e preencha os campos
-   obrigatórios do formulário, incluindo informações de contato solicitadas.
-3. Informe a URL HTTPS de `index.html` no campo **Iframe connector URL**.
-4. Ative somente as capacidades **card-buttons** e **card-badges**.
-5. Salve o cadastro e adicione o Power-Up personalizado a um quadro de testes
-   no Workspace correspondente.
-6. Execute a validação manual antes de adotá-lo nos quadros de trabalho.
+O agente prepara a branch e o PR para revisão. Merge, publicação e gravações
+no quadro de testes dependem da autorização do responsável.
 
-O MVP utiliza as funcionalidades nativas do SDK. O fluxo de instalação não pede
-chave de API, token REST ou autorização OAuth. O cadastro personalizado permanece
-restrito à disponibilidade configurada no Trello, sem publicação no marketplace.
+## Roteiro manual no quadro TESTE
 
-A publicação no GitHub Pages, o cadastro no Trello e a instalação em um quadro
-ficaram a cargo do responsável pelo projeto. Essas ações não foram executadas
-pelo agente.
+A execução dos passos que gravam plugin data deve ser autorizada pelo responsável.
+O quadro indicado é `https://trello.com/b/2bgDZGFz/teste`.
 
-## Validação manual necessária no Trello
+1. Abra `dadas` e **Configurar progresso**. Confira nome, checklists e todos os
+   itens na ordem original, com o progresso esperado de **57%** para quatro
+   concluídos entre sete itens, caso esses dados permaneçam atuais.
+2. Se houver configuração antiga, confira o aviso de migração e todos os itens
+   inicialmente considerados. Abra e feche sem salvar para verificar a leitura.
+3. Após autorizar uma gravação de teste, ignore um item pendente e um concluído.
+   Confira o cálculo pela quantidade de itens considerados e os contadores.
+4. Use os três filtros. A prévia deve permanecer igual ao trocar somente o filtro.
+5. Salve, reabra e confira a seleção, o badge e a preferência compartilhada com
+   outro membro autorizado. Confira que outro cartão manteve suas preferências.
+6. Teste Fechar e Recarregar com rascunho, mantendo ou descartando alterações.
+7. Confira teclado, nomes longos, janela estreita e muitas checklists.
+8. Caso o quadro já contenha casos de 0%, 100%, ausência de itens e todos os
+   itens ignorados, confira os indicadores correspondentes.
+9. Para itens novos, renomeados e excluídos, use apenas um fixture separado cuja
+   criação/alteração tenha sido previamente autorizada. Confirme preferência por
+   ID, inclusão padrão e limpeza de IDs na próxima gravação.
+10. Compare os retornos reais de modal e badge se houver **Dados incompletos**.
+    Teste falhas de conexão e conflitos entre usuários com autorização.
 
-Use um quadro de testes autorizado e registre o resultado de cada caso.
+## Limitações oficiais e operacionais
 
-- Confirme o botão **Configurar progresso**, a abertura do popup e todas as
-  checklists marcadas no primeiro acesso.
-- Crie uma checklist com três itens concluídos em cinco e outra de lembretes.
-  Exclua a de lembretes e confirme `60%` na prévia e no badge após salvar.
-- Se precisar inspecionar a resposta do SDK, use o depurador no contexto do
-  popup e avalie `await window.TrelloPowerUp.iframe().card('checklists')`.
-  Confirme o objeto `checklists`, os arrays `checkItems` e os estados `complete`
-  e `incomplete`, sem copiar dados privados para logs compartilhados.
-- Reabra o popup e confira a seleção salva. Confira a mesma seleção com outro
-  membro autorizado do quadro.
-- Conclua e reabra itens, adicione e remova checklists e confira a atualização
-  do badge no ciclo do Trello, inclusive com o cartão fechado na lista.
-- Confira `0%`, `100%`, cartão sem checklists, checklists vazias e todas
-  desmarcadas. Os três últimos casos devem mostrar o estado neutro.
-- Teste nomes longos, caracteres especiais, teclado e janela estreita.
-- Simule indisponibilidade de rede e acesso sem permissão de edição. Uma falha
-  de gravação deve manter a seleção no popup e permitir nova tentativa.
-- Teste uma alteração de configuração por outro membro enquanto o popup está
-  aberto. Quando a alteração é observada, o popup deve pedir para recarregar.
-- Confira visualmente que o funcionamento das checklists e da barra nativa
-  de progresso foi preservado.
+- O Trello controla a frequência das chamadas de atualização.
+- O fechamento nativo da modal por X ou Escape fornece callback após o
+  fechamento. A API documentada não oferece veto antes de fechar. A confirmação
+  funciona nos botões Fechar e Recarregar da nossa interface. `beforeunload`
+  é somente uma proteção adicional quando o navegador permitir, sem garantia
+  de interceptar a remoção do iframe pelo Trello.
+- Plugin data permite 4096 caracteres por escopo/visibilidade. A validação local
+  verifica o payload da gravação, e o Trello verifica o total junto às outras
+  chaves existentes. Erros preservam o rascunho. Se a confirmação de gravação for perdida, recarregue
+  para verificar o estado efetivamente armazenado.
+- A gravação compartilhada não é atômica. O código detecta mudanças já observadas,
+  mas duas gravações simultâneas ainda podem se sobrepor. Prevalece a última.
+- A rede do ambiente precisa permitir `trello.com` para a inspeção real e
+  `api.github.com` para criação automatizada do PR. As inclusões foram salvas
+  no rascunho de configuração, sem aplicação automática à instância.
 
-## Limitações conhecidas
+## Referências oficiais consultadas
 
-- O Trello controla quando chama novamente as capacidades e `t.render`. O MVP
-  utiliza esse ciclo e a leitura sob demanda ao abrir ou recarregar o popup.
-- O limite de plugin data é de **4096 caracteres por escopo/visibilidade**,
-  compartilhado entre as chaves do próprio Power-Up naquele par. Uma lista
-  grande de IDs pode excedê-lo. O erro de gravação é apresentado ao usuário.
-- A gravação compartilhada do Trello não é atômica. O código relê os dados e
-  detecta alterações observadas antes de salvar, mas gravações simultâneas
-  ainda podem se sobrepor. Nessa situação, prevalece a última gravação.
-- Quem pode editar o cartão pode salvar essa configuração compartilhada.
-  O botão usa a condição `edit`, e eventuais recusas de armazenamento são tratadas.
-- O SDK depende de acesso a `p.trellocdn.com`. A verificação local com mocks
-  precisa ser complementada por um teste instalado no Trello.
+Consultadas em 27/11/2026. As páginas de referência do Power-Up informavam
+atualização em 01/10/2026.
 
-## Documentação oficial consultada
-
-Consultada em 25/11/2026. As páginas de referência do Power-Up consultadas
-informavam atualização em 01/10/2026.
-
-- [Acesso aos dados](https://developer.atlassian.com/cloud/trello/power-ups/client-library/accessing-trello-data/)
-  inclui `checklists` entre os campos permitidos de `t.card()`. A ressalva sobre
-  `checkItems` não garantidos é referente a `t.cards()`, e a página recomenda
-  `t.card()` no contexto individual do cartão para obter os itens.
-- [Modelo de checklist e itens](https://developer.atlassian.com/cloud/trello/rest/api-group-checklists/)
-  documenta os estados `complete` e `incomplete`. Essa referência foi usada para
-  confirmar o modelo de dados, e o MVP consulta os dados somente pelo SDK.
-- [card-buttons](https://developer.atlassian.com/cloud/trello/power-ups/capabilities/card-buttons/)
-- [card-badges](https://developer.atlassian.com/cloud/trello/power-ups/capabilities/card-badges/)
-- [Plugin data com t.get e t.set](https://developer.atlassian.com/cloud/trello/power-ups/client-library/getting-and-setting-data/)
-- [Atualização com t.render](https://developer.atlassian.com/cloud/trello/power-ups/client-library/t-render/)
-- [Popup e fechamento](https://developer.atlassian.com/cloud/trello/power-ups/ui-functions/popup/)
-- [Ajuste de altura com t.sizeTo](https://developer.atlassian.com/cloud/trello/power-ups/ui-functions/t-sizeto/)
+- Acesso aos dados e ressalva sobre `t.cards()`. https://developer.atlassian.com/cloud/trello/power-ups/client-library/accessing-trello-data/
+- Modal, fechamento e callback. https://developer.atlassian.com/cloud/trello/power-ups/ui-functions/modal/
+- Badge e ciclo suportado. https://developer.atlassian.com/cloud/trello/power-ups/capabilities/card-badges/
+- Plugin data, limites e concorrência. https://developer.atlassian.com/cloud/trello/power-ups/client-library/getting-and-setting-data/
+- Modelo dos contadores nativos do cartão. https://developer.atlassian.com/cloud/trello/rest/api-group-cards/
+- Estados dos itens `complete` e `incomplete`. https://developer.atlassian.com/cloud/trello/rest/api-group-checklists/
